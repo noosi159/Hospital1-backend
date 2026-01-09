@@ -1,4 +1,4 @@
-// src/controllers/users.controller.js
+
 import * as service from "../services/users.service.js";
 
 export async function list(req, res) {

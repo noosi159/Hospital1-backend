@@ -1,16 +1,16 @@
 import pool from "../db/pool.js";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 export async function list({ search = "", role, is_active } = {}) {
   let sql = `
-    SELECT id, email, full_name, role, is_active
+    SELECT id, username, full_name, role, is_active
     FROM users
     WHERE 1=1
   `;
   const params = [];
 
   if (search) {
-    sql += " AND (email LIKE ? OR full_name LIKE ?)";
+    sql += " AND (username LIKE ? OR full_name LIKE ?)";
     params.push(`%${search}%`, `%${search}%`);
   }
   if (role) {
@@ -26,25 +26,25 @@ export async function list({ search = "", role, is_active } = {}) {
   return rows;
 }
 
-export async function create({ email, password, full_name, role, is_active = 1 } = {}) {
-  if (!email || !password || !full_name || !role) {
-    const err = new Error("email, password, full_name, role are required");
+export async function create({ username, password, full_name, role, is_active = 1 } = {}) {
+  if (!username || !password || !full_name || !role) {
+    const err = new Error("username, password, full_name, role are required");
     err.status = 400;
     throw err;
   }
   const hash = await bcrypt.hash(password, 10);
 
   await pool.execute(
-    `INSERT INTO users (email, password_hash, full_name, role, is_active)
+    `INSERT INTO users (username, password_hash, full_name, role, is_active)
      VALUES (?, ?, ?, ?, ?)`,
-    [email, hash, full_name, role, is_active]
+    [username, hash, full_name, role, is_active]
   );
 }
 
-export async function update(id, { email, full_name, role, is_active } = {}) {
+export async function update(id, { username, full_name, role, is_active } = {}) {
   await pool.execute(
-    `UPDATE users SET email=?, full_name=?, role=?, is_active=? WHERE id=?`,
-    [email, full_name, role, is_active, id]
+    `UPDATE users SET username=?, full_name=?, role=?, is_active=? WHERE id=?`,
+    [username, full_name, role, is_active, id]
   );
 }
 

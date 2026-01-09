@@ -13,7 +13,7 @@ app.use(cors({
 
 app.use(express.json());
 
-// รวม routes ทั้งหมด
+
 app.use(routes);
 
 const PORT = Number(process.env.PORT || 3000);
