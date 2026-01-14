@@ -28,7 +28,7 @@ export async function list({ fiscal_year } = {}) {
 }
 
 export async function update(id, body) {
-  // รับเฉพาะ field ที่อนุญาตให้แก้
+
   const fiscal_year = body.fiscal_year ? Number(body.fiscal_year) : null;
   const adjrw_min = body.adjrw_min === undefined ? undefined : toNumOrNull(body.adjrw_min);
   const adjrw_max = body.adjrw_max === undefined ? undefined : toNumOrNull(body.adjrw_max);
@@ -46,7 +46,7 @@ export async function update(id, body) {
     throw new Error("ACTUAL must have rate_per_adjrw = null");
   }
 
-  // update แบบ dynamic: ส่งมาเฉพาะบาง field ก็ได้
+ 
   const sets = [];
   const params = [];
 

@@ -7,7 +7,7 @@ export async function list(req, res) {
       : undefined;
 
     const rows = await service.list({ fiscal_year });
-    return res.json(rows); // ✅ return array เหมือน list users
+    return res.json(rows); 
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Load coverage rates failed" });

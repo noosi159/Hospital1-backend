@@ -1,13 +1,9 @@
 import pool from "../db/pool.js";
 
-/**
- * GET cases with status filter
- * - status = "ALL" => return all statuses
- * - status = "NEW" | "RETURNED" | "ASSIGNED_AUDITOR" | "CONFIRMED" => filter by that status
- */
 export async function listCases({ status = "ALL" } = {}) {
   const where = [];
   const params = [];
+
 
   if (status && status !== "ALL") {
     where.push("c.status = ?");
@@ -37,7 +33,7 @@ export async function listCases({ status = "ALL" } = {}) {
 
       ca.assigned_at AS assignedAt,
       c.received_date AS receivedAt,
-      c.dc_date AS dueAt,
+      ca.due_date AS dueAt,
 
       c.note
     FROM cases c
@@ -45,29 +41,26 @@ export async function listCases({ status = "ALL" } = {}) {
     LEFT JOIN users au ON au.id = c.auditor_id
     LEFT JOIN users cu ON cu.id = c.coder_id
 
+   
     LEFT JOIN (
-      SELECT x.case_id, x.assigned_at, x.auditor_id, x.assigned_by
+      SELECT x.*
       FROM case_assignments x
       INNER JOIN (
-        SELECT case_id, MAX(assigned_at) AS max_assigned_at
+        SELECT case_id, MAX(id) AS max_id
         FROM case_assignments
         GROUP BY case_id
-      ) m ON m.case_id = x.case_id AND m.max_assigned_at = x.assigned_at
+      ) m ON m.case_id = x.case_id AND m.max_id = x.id
     ) ca ON ca.case_id = c.id
-
-    ${whereSql}
-    ORDER BY c.created_at DESC
-    `,
-    params
-  );
+     ${whereSql}
+  ORDER BY
+    (c.status = 'RETURNED') DESC,
+    c.updated_at DESC,
+    c.id DESC
+`, params);
 
   return rows;
 }
 
-/**
- * (Optional) Count for tab badges
- * returns: [{ status: 'NEW', count: 10 }, ...]
- */
 export async function countByStatus() {
   const [rows] = await pool.query(`
     SELECT status, COUNT(*) AS count
@@ -125,28 +118,25 @@ export async function assignCase({ an, auditorId, assignedAt, dueAt, assignedBy 
       throw err;
     }
 
-    // ✅ update cases
     await conn.query(
       `
       UPDATE cases
-      SET
-        auditor_id = ?,
-        status = 'ASSIGNED_AUDITOR',
-        received_date = COALESCE(received_date, ?),
-        dc_date = ?,
-        updated_at = CURRENT_TIMESTAMP
+        SET
+          auditor_id = ?,
+          status = 'ASSIGNED_AUDITOR',
+          received_date = COALESCE(received_date, ?),
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
       `,
-      [auditorId, assignedAt, dueAt, c.id]
+      [auditorId, assignedAt, c.id]
     );
 
-    // ✅ insert history (assigned_by NOT NULL)
     await conn.query(
       `
-      INSERT INTO case_assignments (case_id, assigned_at, auditor_id, assigned_by)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO case_assignments (case_id, assigned_at, due_date, auditor_id, assigned_by)
+      VALUES (?, ?, ?, ?, ?)
       `,
-      [c.id, assignedAt, auditorId, assignerId]
+      [c.id, assignedAt, dueAt, auditorId, assignerId]
     );
 
     await conn.commit();
