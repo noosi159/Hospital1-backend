@@ -161,19 +161,16 @@ export async function upsertCaseInfo(caseId, payload = {}) {
   return rows[0] || { caseId, sex, age, ward, coverage: cov };
 }
 
-/**
- * Replace diagnoses ทั้งเคส (แนะนำสุดสำหรับ AuditForm)
- * body: { rows: [...] }
- */
+
 export async function replaceDiagnosesByCase(caseId, rows = []) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
-    // 1) ลบของเดิม
+
     await conn.query(`DELETE FROM diagnoses WHERE case_id = ?`, [caseId]);
 
-    // 2) insert ใหม่
+   
     for (const r of rows) {
       const type = r.type || "ODX";
       await conn.query(
