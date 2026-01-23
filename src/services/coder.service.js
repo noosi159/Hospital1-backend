@@ -95,3 +95,20 @@ export async function acceptCaseByCoder({ caseId, coderId }) {
     conn.release();
   }
 }
+export function loadCoderForm(caseId) {
+  return apiFetch(`/api/coder/cases/${caseId}/form`);
+}
+
+export function coderSaveDraft(caseId, payload) {
+  return apiFetch(`/api/coder/cases/${caseId}/draft`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function coderExportToAuditor(caseId, payload) {
+  return apiFetch(`/api/coder/cases/${caseId}/export-to-auditor`, {
+    method: "POST",
+    body: payload,
+  });
+}

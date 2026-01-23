@@ -136,30 +136,29 @@ export async function listDiagnosesByCase(caseId) {
 
 export async function upsertCaseInfo(caseId, payload = {}) {
   const { sex = null, age = null, ward = null, coverage_code = null, coverage = null } = payload;
-
-  // รองรับทั้ง coverage และ coverage_code
-  const cov = coverage_code ?? coverage ?? null;
+  const cov = coverage ?? coverage_code ?? null;
 
   await pool.query(
     `
-    INSERT INTO case_info (case_id, sex, age, ward, coverage_code)
+    INSERT INTO case_info (case_id, sex, age, ward, coverage)
     VALUES (?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       sex = VALUES(sex),
       age = VALUES(age),
       ward = VALUES(ward),
-      coverage_code = VALUES(coverage_code)
+      coverage = VALUES(coverage)
     `,
     [caseId, sex, age, ward, cov]
   );
 
-  // ส่งค่าล่าสุดกลับ
   const [rows] = await pool.query(
-    `SELECT case_id AS caseId, sex, age, ward, coverage_code AS coverage FROM case_info WHERE case_id = ? LIMIT 1`,
+    `SELECT case_id AS caseId, sex, age, ward, coverage FROM case_info WHERE case_id = ? LIMIT 1`,
     [caseId]
   );
+
   return rows[0] || { caseId, sex, age, ward, coverage: cov };
 }
+
 
 
 export async function replaceDiagnosesByCase(caseId, rows = []) {

@@ -14,6 +14,29 @@ export async function listMyCases(req, res) {
     const auditorId = Number(req.query.auditorId);
     if (!auditorId) return res.status(400).json({ message: "auditorId is required" });
 
+    const ALLOWED = [
+      "ASSIGNED_AUDITOR",
+      "AUDITING",
+      "SENT_TO_CODER",
+      "CODER_WORKING",
+      "CODER_SENT",
+      "RETURNED",
+      "CONFIRMED",
+    ];
+
+    const status = req.query.status || "ALL";
+
+    let whereStatus = "";
+    const params = [auditorId];
+
+    if (status !== "ALL") {
+      whereStatus = " AND c.status = ? ";
+      params.push(status);
+    } else {
+      whereStatus = ` AND c.status IN (${ALLOWED.map(() => "?").join(",")}) `;
+      params.push(...ALLOWED);
+    }
+
     const [rows] = await pool.query(
       `
       SELECT
@@ -27,10 +50,10 @@ export async function listMyCases(req, res) {
       LEFT JOIN departments d ON d.id = c.department_id
       WHERE c.is_active = 1
         AND c.auditor_id = ?
-        AND c.status IN ('ASSIGNED_AUDITOR','AUDITING')
+        ${whereStatus}
       ORDER BY c.updated_at DESC
       `,
-      [auditorId]
+      params
     );
 
     return res.json(rows);
@@ -39,6 +62,7 @@ export async function listMyCases(req, res) {
     return res.status(500).json({ message: err.message });
   }
 }
+
 
 
 export async function returnCase(req, res) {
@@ -90,7 +114,7 @@ export async function upsertCaseInfo(req, res) {
     const caseId = Number(req.params.caseId);
     if (!caseId) return res.status(400).json({ message: "caseId is required" });
 
-    const data = await upsertCaseInfo(caseId, req.body || {});
+    const data = await upsertCaseInfoService(caseId, req.body || {});
     return res.json({ message: "OK", data });
   } catch (err) {
     console.error("upsertCaseInfo error:", err);
