@@ -29,20 +29,6 @@ async function persistPayload(caseId, payload = {}) {
   await replaceDiagnosesByCase(caseId, rows);
 }
 
-export async function saveDraft(req, res) {
-  try {
-    const caseId = Number(req.params.caseId);
-    const payload = req.body || {};
-
-    await persistPayload(caseId, payload);
-    await createSnapshot({ caseId, role: "AUDITOR", action: "SAVE", payload });
-    await updateCaseStatus(caseId, "AUDITING");
-
-    res.json({ ok: true, status: "AUDITING" });
-  } catch (e) {
-    res.status(500).json({ message: e.message });
-  }
-}
 
 export async function exportToCoder(req, res) {
   try {

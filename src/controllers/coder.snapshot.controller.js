@@ -86,21 +86,6 @@ export async function loadForm(req, res) {
   }
 }
 
-export async function saveDraft(req, res) {
-  try {
-    const caseId = Number(req.params.caseId);
-    const payload = req.body || {};
-
-    await persistPayload(caseId, payload);
-    await createSnapshot({ caseId, role: "CODER", action: "SAVE", payload });
-    await pool.query(`UPDATE cases SET status='CODER_WORKING', updated_at=NOW() WHERE id=?`, [caseId]);
-
-    res.json({ ok: true, status: "CODER_WORKING" });
-  } catch (e) {
-    res.status(500).json({ message: e.message });
-  }
-}
-
 export async function exportToAuditor(req, res) {
   try {
     const caseId = Number(req.params.caseId);
