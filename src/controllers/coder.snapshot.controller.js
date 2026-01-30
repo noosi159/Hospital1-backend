@@ -1,6 +1,8 @@
+
 import pool from "../db/pool.js";
 import { createSnapshot, getLatestSnapshot } from "../services/snapshot.service.js";
 import { upsertCaseInfo, replaceDiagnosesByCase } from "../services/auditor.service.js";
+import { deleteAuditorDraft } from "../services/draft.services.js"; 
 
 const norm = (v) => (v === "" ? null : v);
 
@@ -92,8 +94,11 @@ export async function exportToAuditor(req, res) {
     const payload = req.body || {};
 
     await persistPayload(caseId, payload);
+
     await createSnapshot({ caseId, role: "CODER", action: "SUBMIT_TO_AUDITOR", payload });
     await pool.query(`UPDATE cases SET status='CODER_SENT', updated_at=NOW() WHERE id=?`, [caseId]);
+
+    await deleteAuditorDraft(caseId);
 
     res.json({ ok: true, status: "CODER_SENT" });
   } catch (e) {

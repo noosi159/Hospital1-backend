@@ -1,6 +1,8 @@
+
 import pool from "../db/pool.js";
 import { createSnapshot } from "../services/snapshot.service.js";
 import { upsertCaseInfo, replaceDiagnosesByCase } from "../services/auditor.service.js";
+import { deleteCoderDraft } from "../services/draft.services.js"; 
 
 async function updateCaseStatus(caseId, status) {
   await pool.query(`UPDATE cases SET status=?, updated_at=NOW() WHERE id=?`, [status, caseId]);
@@ -29,15 +31,18 @@ async function persistPayload(caseId, payload = {}) {
   await replaceDiagnosesByCase(caseId, rows);
 }
 
-
 export async function exportToCoder(req, res) {
   try {
     const caseId = Number(req.params.caseId);
     const payload = req.body || {};
 
     await persistPayload(caseId, payload);
+
     await createSnapshot({ caseId, role: "AUDITOR", action: "SUBMIT_TO_CODER", payload });
     await updateCaseStatus(caseId, "SENT_TO_CODER");
+
+    // ✅ Step 5: ล้าง draft ของ Coder (ผู้รับ) กัน draft เก่าไปทับ snapshot ใหม่
+    await deleteCoderDraft(caseId);
 
     res.json({ ok: true, status: "SENT_TO_CODER" });
   } catch (e) {

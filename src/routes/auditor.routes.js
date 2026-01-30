@@ -1,6 +1,7 @@
 import { Router } from "express";
 import * as controller from "../controllers/auditor.controller.js";
-import { exportToCoder } from "../controllers/auditor.snapshot.controller.js"; 
+import { exportToCoder } from "../controllers/auditor.snapshot.controller.js";
+ import * as draft from "../controllers/auditor.draft.controller.js";
 
 const router = Router();
 
@@ -16,4 +17,8 @@ router.delete("/diagnoses/:id", controller.deleteDiagnosis);
 
 router.post("/cases/:caseId/export-to-coder", exportToCoder);
 
+
+router.get("/cases/:caseId/draft", draft.getDraft);
+router.post("/cases/:caseId/draft", draft.saveDraft);
+router.delete("/cases/:caseId/draft", draft.clearDraft);
 export default router;
