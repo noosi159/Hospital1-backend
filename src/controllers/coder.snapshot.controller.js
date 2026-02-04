@@ -1,33 +1,28 @@
-
 import pool from "../db/pool.js";
 import { createSnapshot, getLatestSnapshot } from "../services/snapshot.service.js";
-import { upsertCaseInfo, replaceDiagnosesByCase } from "../services/auditor.service.js";
-import { deleteAuditorDraft } from "../services/draft.services.js"; 
+import { replaceDiagnosesByCase } from "../services/auditor.service.js";
+import { deleteAuditorDraft, deleteCoderDraft } from "../services/draft.services.js";
+import { upsertCaseRw } from "../services/rw.service.js";
 
 const norm = (v) => (v === "" ? null : v);
 
+
 async function persistPayload(caseId, payload = {}) {
-  const ci = payload?.caseInfo || {};
-
-  if (payload?.caseInfo) {
-    const [[cur]] = await pool.query(
-      `SELECT sex, age, ward, coverage FROM case_info WHERE case_id=? LIMIT 1`,
-      [caseId]
-    );
-
-    const merged = {
-      sex: ci.sex !== undefined ? norm(ci.sex) : cur?.sex ?? null,
-      age: ci.age !== undefined ? norm(ci.age) : cur?.age ?? null,
-      ward: ci.ward !== undefined ? norm(ci.ward) : cur?.ward ?? null,
-      coverage: ci.coverage !== undefined ? norm(ci.coverage) : cur?.coverage ?? null,
-    };
-
-    await upsertCaseInfo(caseId, merged);
-  }
-
+  // 1) diagnoses
   const rows = Array.isArray(payload?.diagnoses) ? payload.diagnoses : [];
   if (rows.length) {
     await replaceDiagnosesByCase(caseId, rows);
+  }
+
+  // 2) RW / AdjRW
+  if (payload?.coder) {
+    await upsertCaseRw({
+      caseId,
+      rw: payload.coder?.rw,
+      adjrw: payload.coder?.adjrw,
+      calcNote: payload.coder?.rwNote ?? payload.coder?.remark ?? null,
+      userId: payload.coder?.updatedBy ?? null,
+    });
   }
 }
 
@@ -93,12 +88,24 @@ export async function exportToAuditor(req, res) {
     const caseId = Number(req.params.caseId);
     const payload = req.body || {};
 
+    //บันทึก payload ลงตารางจริงก่อน (รวม RW/AdjRW)
     await persistPayload(caseId, payload);
 
+    //สร้าง snapshot ส่งให้ออดิเตอร์
     await createSnapshot({ caseId, role: "CODER", action: "SUBMIT_TO_AUDITOR", payload });
-    await pool.query(`UPDATE cases SET status='CODER_SENT', updated_at=NOW() WHERE id=?`, [caseId]);
 
-    await deleteAuditorDraft(caseId);
+    //อัปเดตสถานะ
+    await pool.query(
+      `UPDATE cases SET status='CODER_SENT', updated_at=NOW() WHERE id=?`,
+      [caseId]
+    );
+
+    //ลบ draft หลังส่ง (แนะนำให้ลบ coder draft)
+    if (typeof deleteCoderDraft === "function") {
+      await deleteCoderDraft(caseId);
+    } else {
+      await deleteAuditorDraft(caseId);
+    }
 
     res.json({ ok: true, status: "CODER_SENT" });
   } catch (e) {

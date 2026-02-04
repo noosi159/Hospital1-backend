@@ -81,22 +81,28 @@ export async function getCaseDetail(caseId) {
   const [rows] = await pool.query(
     `
    SELECT
-  c.id AS caseId,
-  c.an,
-  c.hn,
-  c.patient_name AS patientName,
-  c.status,
-  d.name_th AS department,
+      c.id AS caseId,
+      c.an,
+      c.hn,
+      c.patient_name AS patientName,
+      c.status,
+      d.name_th AS department,
 
-  ci.sex,
-  ci.age,
-  ci.ward,
-  ci.coverage AS coverage
-FROM cases c
-LEFT JOIN departments d ON d.id = c.department_id
-LEFT JOIN case_info ci ON ci.case_id = c.id
-WHERE c.id = ?
-LIMIT 1
+      ci.sex,
+      ci.age,
+      ci.ward,
+      ci.coverage AS coverage,
+
+      crw.rw AS rw,
+      crw.adjrw AS adjrw,
+      crw.calc_note AS rwNote
+
+    FROM cases c
+    LEFT JOIN departments d ON d.id = c.department_id
+    LEFT JOIN case_info ci ON ci.case_id = c.id
+    LEFT JOIN case_rw crw ON crw.case_id = c.id
+    WHERE c.id = ?
+    LIMIT 1
     `,
     [caseId]
   );
@@ -120,8 +126,7 @@ export async function listDiagnosesByCase(caseId) {
       diagnosis,
       s_icd AS sIcd,
       doctor_note AS doctorNote,
-      expense,
-      rw_reason AS rwReason,
+      r_icd AS rIcd,
       coder_note AS coderNote
     FROM diagnoses
     WHERE case_id = ?
@@ -169,15 +174,15 @@ export async function replaceDiagnosesByCase(caseId, rows = []) {
 
     await conn.query(`DELETE FROM diagnoses WHERE case_id = ?`, [caseId]);
 
-   
+
     for (const r of rows) {
       const type = r.type || "ODX";
       await conn.query(
         `
         INSERT INTO diagnoses
-          (case_id, type, icd_incom, diagnosis, s_icd, doctor_note, expense, rw_reason, coder_note)
+          (case_id, type, icd_incom, diagnosis, s_icd, doctor_note, r_icd , coder_note)
         VALUES
-          (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           caseId,
@@ -186,8 +191,7 @@ export async function replaceDiagnosesByCase(caseId, rows = []) {
           r.diagnosis ?? null,
           r.sIcd ?? null,
           r.doctorNote ?? null,
-          r.expense === "" ? null : r.expense ?? null,
-          r.rwReason ?? null,
+          r.rIcd ?? null,
           r.coderNote ?? null,
         ]
       );
