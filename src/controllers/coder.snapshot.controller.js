@@ -100,12 +100,9 @@ export async function exportToAuditor(req, res) {
       [caseId]
     );
 
-    //ลบ draft หลังส่ง (แนะนำให้ลบ coder draft)
-    if (typeof deleteCoderDraft === "function") {
-      await deleteCoderDraft(caseId);
-    } else {
-      await deleteAuditorDraft(caseId);
-    }
+    // ลบ draft ทั้งสองฝั่ง เพื่อไม่ให้ Auditor เห็นข้อมูลเก่าจาก draft overlay
+    await deleteCoderDraft(caseId);
+    await deleteAuditorDraft(caseId);
 
     res.json({ ok: true, status: "CODER_SENT" });
   } catch (e) {

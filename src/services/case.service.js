@@ -4,6 +4,8 @@ export async function listCases({
   status = "ALL",
   dateFrom,
   dateTo,
+  dateType = "DISCHARGE",
+  availableForCoder = false,
   limit = 50,
   page = 1,
 } = {}) {
@@ -15,8 +17,16 @@ export async function listCases({
     params.push(status);
   }
 
+  if (availableForCoder) {
+    where.push("c.coder_id IS NULL");
+  }
+
   if (dateFrom && dateTo) {
-    where.push("DATE(c.discharge_datetime) BETWEEN ? AND ?");
+    if (String(dateType || "").toUpperCase() === "ASSIGNED") {
+      where.push("DATE(aa.assigned_at) BETWEEN ? AND ?");
+    } else {
+      where.push("DATE(c.discharge_datetime) BETWEEN ? AND ?");
+    }
     params.push(dateFrom, dateTo);
   }
 
@@ -58,6 +68,10 @@ export async function listCases({
     `
     SELECT COUNT(*) AS total
     FROM cases c
+    LEFT JOIN case_assignments aa
+      ON aa.case_id = c.id
+     AND aa.role = 'AUDITOR'
+     AND aa.is_active = 1
     ${whereSql}
     `,
     params

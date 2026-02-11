@@ -12,20 +12,13 @@ const norm = (v) => (v === "" ? null : v);
 
 async function persistPayload(caseId, payload = {}) {
   const ci = payload?.caseInfo || {};
-
-  const [[cur]] = await pool.query(
-    `SELECT sex, age, ward, coverage FROM case_info WHERE case_id=? LIMIT 1`,
-    [caseId]
-  );
-
-  const merged = {
-    sex: ci.sex !== undefined ? norm(ci.sex) : cur?.sex ?? null,
-    age: ci.age !== undefined ? norm(ci.age) : cur?.age ?? null,
-    ward: ci.ward !== undefined ? norm(ci.ward) : cur?.ward ?? null,
-    coverage: ci.coverage !== undefined ? norm(ci.coverage) : cur?.coverage ?? null,
-  };
-
-  await upsertCaseInfo(caseId, merged);
+  await upsertCaseInfo(caseId, {
+    sex: ci.sex !== undefined ? norm(ci.sex) : undefined,
+    age: ci.age !== undefined ? norm(ci.age) : undefined,
+    ward: ci.ward !== undefined ? norm(ci.ward) : undefined,
+    coverage: ci.coverage !== undefined ? norm(ci.coverage) : undefined,
+    coverage_code: ci.coverage_code !== undefined ? norm(ci.coverage_code) : undefined,
+  });
 
   const rows = Array.isArray(payload?.diagnoses) ? payload.diagnoses : [];
   await replaceDiagnosesByCase(caseId, rows);

@@ -3,8 +3,25 @@ import * as service from "../services/case.service.js";
 export async function list(req, res) {
   try {
     const status = (req.query.status || "ALL").toString().trim();
-    const rows = await service.listCases({ status });
-    return res.json(rows);
+    const limit = Number(req.query.limit || 50);
+    const page = Number(req.query.page || 1);
+    const dateFrom = req.query.dateFrom?.toString().trim();
+    const dateTo = req.query.dateTo?.toString().trim();
+    const dateType = req.query.dateType?.toString().trim();
+    const availableForCoder =
+      String(req.query.availableForCoder || "").toLowerCase() === "1" ||
+      String(req.query.availableForCoder || "").toLowerCase() === "true";
+
+    const data = await service.listCases({
+      status,
+      limit,
+      page,
+      dateFrom,
+      dateTo,
+      dateType,
+      availableForCoder,
+    });
+    return res.json(data);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });

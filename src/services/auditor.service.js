@@ -68,26 +68,25 @@ export async function returnAuditorCase(caseId, userId) {
 export async function getCaseDetail(caseId) {
   const [rows] = await pool.query(
     `
-   SELECT
+    SELECT
       c.id AS caseId,
       c.an,
       c.hn,
       c.patient_name AS patientName,
       c.status,
-      d.name_th AS department,
+      c.updated_at AS updatedAt,
+      c.ward_name AS department,
 
-      ci.sex,
-      ci.age,
-      ci.ward,
-      ci.coverage AS coverage,
+      c.sex_name AS sex,
+      c.age_text AS age,
+      c.ward_name AS ward,
+      c.right_name AS coverage,
 
       crw.rw AS rw,
       crw.adjrw AS adjrw,
-      crw.calc_note AS rwNote
+      NULL AS rwNote
 
     FROM cases c
-    LEFT JOIN departments d ON d.id = c.department_id
-    LEFT JOIN case_info ci ON ci.case_id = c.id
     LEFT JOIN case_rw crw ON crw.case_id = c.id
     WHERE c.id = ?
     LIMIT 1
@@ -128,28 +127,58 @@ export async function listDiagnosesByCase(caseId) {
 }
 
 export async function upsertCaseInfo(caseId, payload = {}) {
-  const { sex = null, age = null, ward = null, coverage_code = null, coverage = null } = payload;
-  const cov = coverage ?? coverage_code ?? null;
+  const sets = [];
+  const params = [];
 
-  await pool.query(
-    `
-    INSERT INTO case_info (case_id, sex, age, ward, coverage)
-    VALUES (?, ?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-      sex = VALUES(sex),
-      age = VALUES(age),
-      ward = VALUES(ward),
-      coverage = VALUES(coverage)
-    `,
-    [caseId, sex, age, ward, cov]
-  );
+  if (Object.prototype.hasOwnProperty.call(payload, "sex")) {
+    sets.push("sex_name = ?");
+    params.push(payload.sex === "" ? null : payload.sex);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "age")) {
+    sets.push("age_text = ?");
+    params.push(payload.age === "" ? null : payload.age);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "ward")) {
+    sets.push("ward_name = ?");
+    params.push(payload.ward === "" ? null : payload.ward);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "coverage")) {
+    sets.push("right_name = ?");
+    params.push(payload.coverage === "" ? null : payload.coverage);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "coverage_code")) {
+    sets.push("right_code = ?");
+    params.push(payload.coverage_code === "" ? null : payload.coverage_code);
+  }
+
+  if (sets.length) {
+    await pool.query(
+      `
+      UPDATE cases
+      SET ${sets.join(", ")}, updated_at = NOW()
+      WHERE id = ?
+      `,
+      [...params, caseId]
+    );
+  }
 
   const [rows] = await pool.query(
-    `SELECT case_id AS caseId, sex, age, ward, coverage FROM case_info WHERE case_id = ? LIMIT 1`,
+    `
+    SELECT
+      id AS caseId,
+      sex_name AS sex,
+      age_text AS age,
+      ward_name AS ward,
+      right_name AS coverage,
+      right_code AS coverageCode
+    FROM cases
+    WHERE id = ?
+    LIMIT 1
+    `,
     [caseId]
   );
 
-  return rows[0] || { caseId, sex, age, ward, coverage: cov };
+  return rows[0] || { caseId };
 }
 
 

@@ -13,6 +13,12 @@ export async function listMyCases(req, res) {
   try {
     const auditorId = Number(req.query.auditorId);
     if (!auditorId) return res.status(400).json({ message: "auditorId is required" });
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+    const offset = (page - 1) * limit;
+    const dateType = String(req.query.dateType || "ASSIGNED").toUpperCase();
+    const dateFrom = req.query.dateFrom ? String(req.query.dateFrom) : "";
+    const dateTo = req.query.dateTo ? String(req.query.dateTo) : "";
 
     const ALLOWED = [
       "ASSIGNED_AUDITOR",
@@ -24,17 +30,29 @@ export async function listMyCases(req, res) {
       "CONFIRMED",
     ];
 
-    const status = req.query.status || "ALL";
-
-    let whereStatus = "";
-    const params = [auditorId];
-
-    if (status !== "ALL") {
-      whereStatus = " AND c.status = ? ";
-      params.push(status);
+    const statusRaw = String(req.query.status || "ALL").trim();
+    let statuses = [];
+    if (statusRaw !== "ALL") {
+      statuses = statusRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => ALLOWED.includes(s));
+      if (!statuses.length) {
+        return res.json({ rows: [], total: 0, page, limit, totalPages: 1 });
+      }
     } else {
-      whereStatus = ` AND c.status IN (${ALLOWED.map(() => "?").join(",")}) `;
-      params.push(...ALLOWED);
+      statuses = ALLOWED;
+    }
+
+    const whereStatus = ` AND c.status IN (${statuses.map(() => "?").join(",")}) `;
+    const baseParams = [auditorId, ...statuses];
+    const dateParams = [];
+
+    let whereDate = "";
+    if (dateFrom && dateTo) {
+      const dateCol = dateType === "DISCHARGE" ? "c.discharge_datetime" : "c.updated_at";
+      whereDate = ` AND DATE(${dateCol}) BETWEEN ? AND ? `;
+      dateParams.push(dateFrom, dateTo);
     }
 
     const [rows] = await pool.query(
@@ -47,19 +65,37 @@ export async function listMyCases(req, res) {
         c.ward_name AS department,       
         c.status,
         c.note,
+        c.created_at AS receivedAt,
         c.updated_at AS assignedAt,
+        c.updated_at AS updatedAt,
         c.discharge_datetime AS dischargeDatetime,
         c.right_name AS rightName
       FROM cases c
       WHERE c.is_active = 1
         AND c.auditor_id = ?
         ${whereStatus}
+        ${whereDate}
       ORDER BY c.updated_at DESC
+      LIMIT ? OFFSET ?
       `,
-      params
+      [...baseParams, ...dateParams, limit, offset]
     );
 
-    return res.json(rows);
+    const [[countRow]] = await pool.query(
+      `
+      SELECT COUNT(*) AS total
+      FROM cases c
+      WHERE c.is_active = 1
+        AND c.auditor_id = ?
+        ${whereStatus}
+        ${whereDate}
+      `,
+      [...baseParams, ...dateParams]
+    );
+
+    const total = Number(countRow?.total || 0);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    return res.json({ rows, total, page, limit, totalPages });
   } catch (err) {
     console.error("listMyCases error:", err);
     return res.status(500).json({ message: err.message });

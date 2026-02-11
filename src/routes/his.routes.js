@@ -1,6 +1,7 @@
 // file รวม API ที่ที่แอมทำให้จาก รพ
 
 import { Router } from "express";
+import { syncCasesFromHIS } from "../services/his.sync.service.js";
 
 const router = Router();
 
@@ -49,6 +50,18 @@ function buildIcd10Url({ query, name, code }) {
 function buildIcd9Url({ query, name, code }) {
   const picked = pickNameAndCode({ kind: "icd9", query, name, code });
   return `${HIS_BASE}/SearchIcd9_CM/${encodeURIComponent(picked.name)}/${encodeURIComponent(picked.code)}`;
+}
+
+function safeParam(v) {
+  const s = String(v ?? "").trim();
+  return s ? s : "_";
+}
+
+function buildPatientsDischargeUrl({ hn, an, dc_since, dc_end }) {
+  return (
+    `${HIS_BASE}/PatientsDischarge/` +
+    `${safeParam(hn)}/${safeParam(an)}/${safeParam(dc_since)}/${safeParam(dc_end)}`
+  );
 }
 
 router.get("/icd10", async (req, res) => {

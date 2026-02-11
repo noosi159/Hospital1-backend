@@ -76,14 +76,20 @@ export async function acceptCaseByCoder({ caseId, coderId }) {
     }
 
     // ✅ ไม่เปลี่ยน status (ตาม requirement ของคุณ)
-    await conn.query(
+    const [updateResult] = await conn.query(
       `
       UPDATE cases
       SET coder_id = ?, status = 'CODER_WORKING', updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND coder_id IS NULL
+      WHERE id = ? AND (coder_id IS NULL OR coder_id = 0)
       `,
       [coderId, caseId]
     );
+
+    if (!updateResult?.affectedRows) {
+      const err = new Error("Case already taken");
+      err.status = 409;
+      throw err;
+    }
 
     await conn.commit();
     return { ok: true };
