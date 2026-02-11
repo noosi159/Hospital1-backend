@@ -17,7 +17,7 @@ function normalizeQuery(q) {
 function looksLikeIcd10Code(q) {
   const s = normalizeQuery(q).toUpperCase().replace(/\s+/g, "");
   if (!s) return false;
-  // รองรับพิมพ์แบบไม่มีจุด เช่น E119
+
   return /^[A-Z]\d{2}(\.\d{1,4})?$/.test(s) || /^[A-Z]\d{3,6}$/.test(s);
 }
 
@@ -28,7 +28,6 @@ function looksLikeIcd9Code(q) {
 }
 
 function pickNameAndCode({ kind, query, name, code }) {
-  // ถ้าส่ง name/code มาโดยตรง ให้ใช้ตามนั้น
   const n0 = normalizeQuery(name);
   const c0 = normalizeQuery(code);
   if (n0 || c0) return { name: n0 || "_", code: c0 || "_" };
@@ -38,7 +37,7 @@ function pickNameAndCode({ kind, query, name, code }) {
 
   const isCode = kind === "icd10" ? looksLikeIcd10Code(q) : looksLikeIcd9Code(q);
 
-  // ถ้าเป็นรหัส → ใส่ไปช่อง code, ถ้าเป็นชื่อ → ใส่ไปช่อง name
+ 
   return isCode ? { name: "_", code: q } : { name: q, code: "_" };
 }
 
@@ -87,6 +86,31 @@ router.get("/icd9", async (req, res) => {
     res.send(text);
   } catch (err) {
     res.status(500).json({ message: "proxy icd9 failed", error: String(err) });
+  }
+});
+
+router.get("/patients-discharge", async (req, res) => {
+  try {
+    const { hn, an, dc_since, dc_end } = req.query;
+    const url = buildPatientsDischargeUrl({ hn, an, dc_since, dc_end });
+
+    const r = await fetch(url);
+    const text = await r.text();
+
+    res.status(r.status);
+    res.set("content-type", r.headers.get("content-type") || "application/json; charset=utf-8");
+    res.send(text);
+  } catch (err) {
+    res.status(500).json({ message: "proxy patients-discharge failed", error: String(err) });
+  }
+});
+router.post("/sync-discharge", async (req, res) => {
+  try {
+    const { hn, an, dc_since, dc_end } = req.body || {};
+    const result = await syncCasesFromHIS({ hn, an, dc_since, dc_end });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: "sync-discharge failed", error: String(err) });
   }
 });
 

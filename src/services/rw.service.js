@@ -13,16 +13,15 @@ export async function upsertCaseRw({ caseId, rw, adjrw, calcNote = null, userId 
 
   await pool.query(
     `
-    INSERT INTO case_rw (case_id, rw, adjrw, calc_note, updated_by)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO case_rw (case_id, rw, adjrw, updated_by)
+    VALUES (?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       rw = VALUES(rw),
       adjrw = VALUES(adjrw),
-      calc_note = VALUES(calc_note),
       updated_by = VALUES(updated_by),
       updated_at = NOW()
     `,
-    [caseId, rwN, adjrwN, calcNote, userId]
+    [caseId, rwN, adjrwN, userId]
   );
 
   return { ok: true, caseId, rw: rwN, adjrw: adjrwN };

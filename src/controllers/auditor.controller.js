@@ -41,13 +41,16 @@ export async function listMyCases(req, res) {
       `
       SELECT
         c.id AS caseId,
-        c.an, c.hn, c.patient_name AS patientName,
-        d.name_th AS department,
+        c.an,
+        c.hn,
+        c.patient_name AS patientName,
+        c.ward_name AS department,       
         c.status,
         c.note,
-        c.updated_at AS assignedAt
+        c.updated_at AS assignedAt,
+        c.discharge_datetime AS dischargeDatetime,
+        c.right_name AS rightName
       FROM cases c
-      LEFT JOIN departments d ON d.id = c.department_id
       WHERE c.is_active = 1
         AND c.auditor_id = ?
         ${whereStatus}
@@ -62,8 +65,6 @@ export async function listMyCases(req, res) {
     return res.status(500).json({ message: err.message });
   }
 }
-
-
 
 export async function returnCase(req, res) {
   try {

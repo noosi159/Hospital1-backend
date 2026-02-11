@@ -8,7 +8,7 @@ export async function listCasesForCoder() {
       c.hn,
       c.patient_name AS patientName,
 
-      d.name_th AS departmentNameTh,
+      c.ward_name AS departmentNameTh,
       c.status,
       c.is_active AS isActive,
 
@@ -18,12 +18,11 @@ export async function listCasesForCoder() {
       c.coder_id AS coderId,
       cu.full_name AS coderName,
 
-      c.received_date AS receivedAt,
-      c.sent_date AS sentAt,
+      c.created_at AS receivedAt,
+      c.updated_at AS sentAt,
       c.note
 
     FROM cases c
-    LEFT JOIN departments d ON d.id = c.department_id
     LEFT JOIN users au ON au.id = c.auditor_id
     LEFT JOIN users cu ON cu.id = c.coder_id
     WHERE c.is_active = 1
@@ -80,7 +79,7 @@ export async function acceptCaseByCoder({ caseId, coderId }) {
     await conn.query(
       `
       UPDATE cases
-      SET coder_id = ?, updated_at = CURRENT_TIMESTAMP
+      SET coder_id = ?, status = 'CODER_WORKING', updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND coder_id IS NULL
       `,
       [coderId, caseId]

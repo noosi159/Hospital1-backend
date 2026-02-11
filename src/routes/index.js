@@ -11,7 +11,7 @@ import hisRoutes from "./his.routes.js";
 
 const router = Router();
 
-router.use("/auth", authRoutes);""
+router.use("/auth", authRoutes);
 router.use("/api/users", usersRoutes);
 router.use("/api/cases", casesRoutes);
 router.use("/api/auditor", auditorRoutes); 

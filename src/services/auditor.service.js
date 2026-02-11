@@ -14,6 +14,7 @@ export async function returnAuditorCase(caseId, userId) {
 
   const curStatus = rows[0].status;
 
+  
   const BLOCK = new Set(["SENT_TO_CODER", "CODER_WORKING", "CONFIRMED"]);
   if (BLOCK.has(curStatus)) {
     const err = new Error("เคสถูกส่งให้ Coder แล้ว ไม่สามารถคืนได้");
@@ -25,47 +26,34 @@ export async function returnAuditorCase(caseId, userId) {
   try {
     await conn.beginTransaction();
 
-    await conn.query(
-      `
-      UPDATE cases
-      SET
-        status = 'RETURNED',
-        auditor_id = NULL,
-        updated_at = NOW()
-      WHERE id = ?
-      `,
-      [caseId]
-    );
     if (userId) {
       await conn.query(
         `
-        DELETE FROM case_assignments
-        WHERE id = (
-          SELECT last_id FROM (
-            SELECT MAX(id) AS last_id
-            FROM case_assignments
-            WHERE case_id = ? AND auditor_id = ?
-          ) t
-        )
+        UPDATE case_assignments
+        SET is_active = 0, remark = 'RETURNED'
+        WHERE case_id = ? AND role = 'AUDITOR' AND assigned_to = ? AND is_active = 1
         `,
         [caseId, userId]
       );
     } else {
-
       await conn.query(
         `
-        DELETE FROM case_assignments
-        WHERE id = (
-          SELECT last_id FROM (
-            SELECT MAX(id) AS last_id
-            FROM case_assignments
-            WHERE case_id = ?
-          ) t
-        )
+        UPDATE case_assignments
+        SET is_active = 0, remark = 'RETURNED'
+        WHERE case_id = ? AND role = 'AUDITOR' AND is_active = 1
         `,
         [caseId]
       );
     }
+
+    await conn.query(
+      `
+      UPDATE cases
+      SET status = 'RETURNED', auditor_id = NULL, updated_at = NOW()
+      WHERE id = ?
+      `,
+      [caseId]
+    );
 
     await conn.commit();
     return { caseId, status: "RETURNED" };

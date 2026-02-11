@@ -1,91 +1,119 @@
 import pool from "../db/pool.js";
 
-export async function listCases({ status = "ALL" } = {}) {
-  const where = [];
+export async function listCases({
+  status = "ALL",
+  dateFrom,
+  dateTo,
+  limit = 50,
+  page = 1,
+} = {}) {
+  const where = ["c.is_active = 1"];
   const params = [];
 
-
-  if (status && status !== "ALL") {
+  if (status !== "ALL") {
     where.push("c.status = ?");
     params.push(status);
   }
 
+  if (dateFrom && dateTo) {
+    where.push("DATE(c.discharge_datetime) BETWEEN ? AND ?");
+    params.push(dateFrom, dateTo);
+  }
+
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const offset = (Number(page) - 1) * Number(limit);
 
   const [rows] = await pool.query(
     `
     SELECT
-      c.id AS caseId,
+      c.id,
       c.an,
-      c.hn,
-      c.patient_name AS patientName,
-
-      c.department_id AS departmentId,
-      d.name_th AS departmentNameTh,
-
+      c.patient_name,
+      c.right_name,
       c.status,
-      c.is_active AS isActive,
+      c.discharge_datetime,
 
-      c.auditor_id AS auditorId,
       au.full_name AS auditorName,
-      c.coder_id AS coderId,
       cu.full_name AS coderName,
 
-      ca.assigned_at AS assignedAt,
-      c.received_date AS receivedAt,
-      ca.due_date AS dueAt,
+      aa.assigned_at AS assignedAt,
+      aa.due_date AS dueAt
 
-      c.note
     FROM cases c
-    LEFT JOIN departments d ON d.id = c.department_id
     LEFT JOIN users au ON au.id = c.auditor_id
     LEFT JOIN users cu ON cu.id = c.coder_id
+    LEFT JOIN case_assignments aa
+      ON aa.case_id = c.id
+     AND aa.role = 'AUDITOR'
+     AND aa.is_active = 1
 
-   
-    LEFT JOIN (
-      SELECT x.*
-      FROM case_assignments x
-      INNER JOIN (
-        SELECT case_id, MAX(id) AS max_id
-        FROM case_assignments
-        GROUP BY case_id
-      ) m ON m.case_id = x.case_id AND m.max_id = x.id
-    ) ca ON ca.case_id = c.id
-     ${whereSql}
-  ORDER BY
-    (c.status = 'RETURNED') DESC,
-    c.updated_at DESC,
-    c.id DESC
-`, params);
+    ${whereSql}
+    ORDER BY c.discharge_datetime DESC
+    LIMIT ? OFFSET ?
+    `,
+    [...params, Number(limit), offset]
+  );
 
-  return rows;
+  const [[countRow]] = await pool.query(
+    `
+    SELECT COUNT(*) AS total
+    FROM cases c
+    ${whereSql}
+    `,
+    params
+  );
+
+  return {
+    rows,
+    total: countRow.total,
+  };
+}
+
+export async function getCaseById(caseId) {
+  const [rows] = await pool.query(
+    `SELECT * FROM cases WHERE id = ? LIMIT 1`,
+    [caseId]
+  );
+  return rows[0] || null;
 }
 
 export async function countByStatus() {
   const [rows] = await pool.query(`
-    SELECT status, COUNT(*) AS count
-    FROM cases
-    GROUP BY status
+    SELECT c.status, COUNT(*) AS count
+    FROM cases c
+    WHERE c.is_active = 1
+    GROUP BY c.status
   `);
   return rows;
 }
 
-export async function assignCase({ an, auditorId, assignedAt, dueAt, assignedBy }) {
-  if (!an || !auditorId || !assignedAt || !dueAt) {
-    const err = new Error("Missing required fields: an, auditorId, assignedAt, dueAt");
+export async function assignCase({
+  caseId,
+  role,
+  assignedTo,
+  assignedBy,
+  dueDate,
+}) {
+  if (!caseId || !role || !assignedTo) {
+    const err = new Error("Missing required fields: caseId, role, assignedTo");
     err.status = 400;
     throw err;
   }
 
-  const assignerId = Number(assignedBy) || 1;
+  if (!["AUDITOR", "CODER"].includes(role)) {
+    const err = new Error("Invalid role");
+    err.status = 400;
+    throw err;
+  }
 
   const conn = await pool.getConnection();
+
   try {
     await conn.beginTransaction();
 
     const [[c]] = await conn.query(
-      `SELECT id, status, is_active FROM cases WHERE an = ? LIMIT 1`,
-      [an]
+      `SELECT id, is_active FROM cases WHERE id = ? LIMIT 1`,
+      [caseId]
     );
     if (!c) {
       const err = new Error("Case not found");
@@ -98,46 +126,83 @@ export async function assignCase({ an, auditorId, assignedAt, dueAt, assignedBy 
       throw err;
     }
 
-    const [[u]] = await conn.query(
-      `SELECT id, role, is_active FROM users WHERE id = ? LIMIT 1`,
-      [auditorId]
-    );
-    if (!u) {
-      const err = new Error("Auditor not found");
-      err.status = 404;
-      throw err;
-    }
-    if (u.is_active === 0) {
-      const err = new Error("Auditor is inactive");
-      err.status = 400;
-      throw err;
-    }
-    if (u.role !== "AUDITOR") {
-      const err = new Error("Selected user is not an AUDITOR");
-      err.status = 400;
-      throw err;
-    }
-
+    // ปิด assignment เดิมของ role นั้น
     await conn.query(
       `
-      UPDATE cases
-        SET
-          auditor_id = ?,
-          status = 'ASSIGNED_AUDITOR',
-          received_date = COALESCE(received_date, ?),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      UPDATE case_assignments
+      SET is_active = 0
+      WHERE case_id = ?
+        AND role = ?
+        AND is_active = 1
       `,
-      [auditorId, assignedAt, c.id]
+      [caseId, role]
     );
 
+    // สร้าง assignment ใหม่
     await conn.query(
       `
-      INSERT INTO case_assignments (case_id, assigned_at, due_date, auditor_id, assigned_by)
+      INSERT INTO case_assignments
+        (case_id, role, assigned_to, assigned_by, due_date)
       VALUES (?, ?, ?, ?, ?)
       `,
-      [c.id, assignedAt, dueAt, auditorId, assignerId]
+      [caseId, role, assignedTo, assignedBy || null, dueDate || null]
     );
+
+    // อัปเดต cases + status
+    if (role === "AUDITOR") {
+      await conn.query(
+        `
+        UPDATE cases
+        SET auditor_id = ?, status = 'ASSIGNED_AUDITOR', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        `,
+        [assignedTo, caseId]
+      );
+    } else {
+      await conn.query(
+        `
+        UPDATE cases
+        SET coder_id = ?, status = 'CODER_WORKING', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        `,
+        [assignedTo, caseId]
+      );
+    }
+
+    await conn.commit();
+    return { ok: true };
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
+}
+
+export async function unassignCase({ caseId, role }) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    await conn.query(
+      `
+      UPDATE case_assignments
+      SET is_active = 0
+      WHERE case_id = ? AND role = ? AND is_active = 1
+      `,
+      [caseId, role]
+    );
+
+    if (role === "AUDITOR") {
+      await conn.query(
+        `
+        UPDATE cases
+        SET auditor_id = NULL, status = 'NEW', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        `,
+        [caseId]
+      );
+    }
 
     await conn.commit();
     return { ok: true };
