@@ -1,29 +1,58 @@
-import pool from "../db/pool.js";
+﻿import pool from "../db/pool.js";
 import { createSnapshot, getLatestSnapshot } from "../services/snapshot.service.js";
 import { replaceDiagnosesByCase } from "../services/auditor.service.js";
 import { deleteAuditorDraft, deleteCoderDraft } from "../services/draft.services.js";
-import { upsertCaseRw } from "../services/rw.service.js";
+import { getLatestAdjrwState, saveAdjRwWithHistory } from "../services/rw.service.js";
 
-const norm = (v) => (v === "" ? null : v);
+const toNumberOrNull = (v) => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
 
+function extractAdjrwValue(rawAdjrw) {
+  if (rawAdjrw && typeof rawAdjrw === "object") {
+    const candidates = [
+      rawAdjrw.postAdjRw,
+      rawAdjrw.postAdjrw,
+      rawAdjrw.adjrw,
+      rawAdjrw.value,
+    ];
+    for (const c of candidates) {
+      const n = toNumberOrNull(c);
+      if (n !== null) return n;
+    }
+    return null;
+  }
+
+  return toNumberOrNull(rawAdjrw);
+}
 
 async function persistPayload(caseId, payload = {}) {
-  // 1) diagnoses
+  let adjrwResult = null;
+
   const rows = Array.isArray(payload?.diagnoses) ? payload.diagnoses : [];
   if (rows.length) {
     await replaceDiagnosesByCase(caseId, rows);
   }
 
-  // 2) RW / AdjRW
-  if (payload?.coder) {
-    await upsertCaseRw({
+  const postAdjrw = extractAdjrwValue(payload?.coder?.adjrw);
+  if (postAdjrw !== null) {
+    const rwInput = payload?.coder?.rw;
+    const rwForSave = rwInput === "" || rwInput === null || rwInput === undefined
+      ? undefined
+      : rwInput;
+
+    adjrwResult = await saveAdjRwWithHistory({
       caseId,
-      rw: payload.coder?.rw,
-      adjrw: payload.coder?.adjrw,
-      calcNote: payload.coder?.rwNote ?? payload.coder?.remark ?? null,
+      rw: rwForSave,
+      postAdjrw,
       userId: payload.coder?.updatedBy ?? null,
+      source: "CODER_EXPORT",
     });
   }
+
+  return { adjrw: adjrwResult };
 }
 
 export async function claimCase(req, res) {
@@ -65,7 +94,9 @@ export async function claimCase(req, res) {
     await conn.commit();
     res.json({ ok: true, caseId, coderId });
   } catch (e) {
-    try { await conn.rollback(); } catch {}
+    try {
+      await conn.rollback();
+    } catch {}
     res.status(500).json({ message: e.message });
   } finally {
     conn.release();
@@ -88,23 +119,58 @@ export async function exportToAuditor(req, res) {
     const caseId = Number(req.params.caseId);
     const payload = req.body || {};
 
-    //บันทึก payload ลงตารางจริงก่อน (รวม RW/AdjRW)
-    await persistPayload(caseId, payload);
+    const persistResult = await persistPayload(caseId, payload);
 
-    //สร้าง snapshot ส่งให้ออดิเตอร์
-    await createSnapshot({ caseId, role: "CODER", action: "SUBMIT_TO_AUDITOR", payload });
+    const adj = persistResult?.adjrw || (await getLatestAdjrwState(caseId));
+    const safeRw = toNumberOrNull(adj?.rw) ?? 0;
+    const safePreAdjrw = toNumberOrNull(adj?.preAdjrw) ?? 0;
+    const safePostAdjrw = toNumberOrNull(adj?.postAdjrw) ?? safePreAdjrw;
 
-    //อัปเดตสถานะ
+    const amountText =
+      adj?.calculatedAmount != null
+        ? Number(adj.calculatedAmount).toLocaleString("th-TH", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })
+        : null;
+
+    const snapshotPayload = {
+      ...payload,
+      coder: {
+        ...(payload?.coder || {}),
+        rw: toNumberOrNull(payload?.coder?.rw) ?? safeRw,
+        adjrw: toNumberOrNull(payload?.coder?.adjrw) ?? safePostAdjrw,
+        preAdjRw: safePreAdjrw,
+        postAdjRw: safePostAdjrw,
+        calcType: payload?.coder?.calcType ?? (adj?.calculatedAmount == null ? "ACTUAL" : "RATE"),
+        amountText: payload?.coder?.amountText ?? amountText,
+      },
+      adjrw: {
+        rw: safeRw,
+        preAdjrw: safePreAdjrw,
+        postAdjrw: safePostAdjrw,
+        rateYear: adj?.rateYear ?? null,
+        rateUsed: adj?.rateUsed ?? null,
+        calculatedAmount: adj?.calculatedAmount ?? null,
+      },
+    };
+
+    await createSnapshot({
+      caseId,
+      role: "CODER",
+      action: "SUBMIT_TO_AUDITOR",
+      payload: snapshotPayload,
+    });
+
     await pool.query(
       `UPDATE cases SET status='CODER_SENT', updated_at=NOW() WHERE id=?`,
       [caseId]
     );
 
-    // ลบ draft ทั้งสองฝั่ง เพื่อไม่ให้ Auditor เห็นข้อมูลเก่าจาก draft overlay
     await deleteCoderDraft(caseId);
     await deleteAuditorDraft(caseId);
 
-    res.json({ ok: true, status: "CODER_SENT" });
+    res.json({ ok: true, status: "CODER_SENT", ...persistResult });
   } catch (e) {
     res.status(500).json({ message: e.message });
   }

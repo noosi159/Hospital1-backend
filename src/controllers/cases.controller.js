@@ -28,6 +28,24 @@ export async function list(req, res) {
   }
 }
 
+export async function getById(req, res) {
+  try {
+    const caseId = Number(req.params.caseId);
+    if (!Number.isFinite(caseId)) {
+      return res.status(400).json({ message: "Invalid caseId" });
+    }
+
+    const data = await service.getCaseById(caseId);
+    if (!data) {
+      return res.status(404).json({ message: "Case not found" });
+    }
+    return res.json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: err.message });
+  }
+}
+
 
 export async function assign(req, res) {
   try {

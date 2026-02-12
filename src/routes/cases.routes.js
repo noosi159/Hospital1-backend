@@ -5,6 +5,7 @@ const router = Router();
 
 
 router.get("/", controller.list);
+router.get("/:caseId", controller.getById);
 
 router.post("/assign", controller.assign);
 

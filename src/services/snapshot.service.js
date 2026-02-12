@@ -41,6 +41,17 @@ export async function listSnapshots({ caseId, role = null, action = null, limit 
   return rows;
 }
 
+export async function listCaseSnapshotHistory(caseId) {
+  const [rows] = await pool.query(
+    `SELECT id, role, action, created_at
+     FROM case_form_snapshots
+     WHERE case_id=?
+     ORDER BY created_at ASC`,
+    [caseId]
+  );
+  return rows;
+}
+
 export async function getSnapshotById(snapshotId) {
   const [rows] = await pool.query(
     `SELECT s.id, s.case_id AS caseId, s.role, s.action,
@@ -49,6 +60,17 @@ export async function getSnapshotById(snapshotId) {
             s.created_at AS createdAt
      FROM case_form_snapshots s
      WHERE s.id=?
+     LIMIT 1`,
+    [snapshotId]
+  );
+  return rows[0] || null;
+}
+
+export async function getSnapshotPayloadById(snapshotId) {
+  const [rows] = await pool.query(
+    `SELECT payload_json
+     FROM case_form_snapshots
+     WHERE id=?
      LIMIT 1`,
     [snapshotId]
   );

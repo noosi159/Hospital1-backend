@@ -1,4 +1,5 @@
 import pool from "../db/pool.js";
+import { findMatchedRate } from "./coverage.service.js";
 
 export async function returnAuditorCase(caseId, userId) {
   const [rows] = await pool.query(
@@ -76,14 +77,37 @@ export async function getCaseDetail(caseId) {
       c.status,
       c.updated_at AS updatedAt,
       c.ward_name AS department,
+      c.receive_amt AS receiveAmt,
 
       c.sex_name AS sex,
       c.age_text AS age,
       c.ward_name AS ward,
       c.right_name AS coverage,
+      c.right_code AS coverageCode,
+      COALESCE(
+      (
+        SELECT m.coverage_group
+        FROM coverage_prefix_mapping m
+        WHERE UPPER(TRIM(IFNULL(c.right_code, ''))) LIKE CONCAT(UPPER(TRIM(m.right_prefix)), '%')
+        ORDER BY CHAR_LENGTH(m.right_prefix) DESC
+        LIMIT 1
+      ),
+      CASE
+        WHEN c.right_name LIKE '%ประกันสังคม%' THEN 'SSS'
+        WHEN c.right_name LIKE '%ต่างด้าว%' THEN 'FOREIGN'
+        WHEN c.right_name LIKE '%บุคคลที่มีปัญหา%' THEN 'PROBLEM'
+        WHEN c.right_name LIKE '%ข้าราชการ%' OR c.right_name LIKE '%เบิกกรมบัญชีกลาง%' THEN 'GOV'
+        WHEN c.right_name LIKE '%ท้องถิ่น%' THEN 'LOCAL'
+        WHEN c.right_name LIKE '%บัตรสุขภาพถ้วนหน้า%' OR c.right_name LIKE '%30 บาท%' THEN 'UC'
+        ELSE NULL
+      END
+      ) AS coverage_group,
 
       crw.rw AS rw,
       crw.adjrw AS adjrw,
+      crw.rate_year AS rateYear,
+      crw.rate_used AS rateUsed,
+      crw.calculated_amount AS calculatedAmount,
       NULL AS rwNote
 
     FROM cases c
@@ -99,7 +123,34 @@ export async function getCaseDetail(caseId) {
     err.status = 404;
     throw err;
   }
-  return rows[0];
+  const row = rows[0];
+  const rateYearUsed = row?.rateYear ?? new Date().getFullYear();
+  const matchedRate = await findMatchedRate({
+    coverage_group: row?.coverage_group,
+    adjrw: row?.adjrw,
+    rate_year: rateYearUsed,
+  });
+
+  const adjrwN = row?.adjrw == null ? null : Number(row.adjrw);
+  const calculatedAmount = matchedRate && Number.isFinite(adjrwN)
+    ? Math.round((adjrwN * Number(matchedRate.rate_per_adjrw) + Number.EPSILON) * 100) / 100
+    : null;
+
+  return {
+    ...row,
+    coverageGroup: row?.coverage_group ?? null,
+    caseInfo: {
+      sex: row?.sex ?? null,
+      age: row?.age ?? null,
+      ward: row?.ward ?? null,
+      coverage: row?.coverage ?? null,
+      coverage_code: row?.coverageCode ?? null,
+      coverage_group: row?.coverage_group ?? null,
+    },
+    matched_rate: matchedRate,
+    calculated_amount_preview: calculatedAmount,
+    calculation_rate_year: rateYearUsed,
+  };
 }
 
 export async function listDiagnosesByCase(caseId) {
@@ -143,12 +194,16 @@ export async function upsertCaseInfo(caseId, payload = {}) {
     params.push(payload.ward === "" ? null : payload.ward);
   }
   if (Object.prototype.hasOwnProperty.call(payload, "coverage")) {
-    sets.push("right_name = ?");
-    params.push(payload.coverage === "" ? null : payload.coverage);
+    if (payload.coverage !== null && payload.coverage !== "") {
+      sets.push("right_name = ?");
+      params.push(payload.coverage);
+    }
   }
   if (Object.prototype.hasOwnProperty.call(payload, "coverage_code")) {
-    sets.push("right_code = ?");
-    params.push(payload.coverage_code === "" ? null : payload.coverage_code);
+    if (payload.coverage_code !== null && payload.coverage_code !== "") {
+      sets.push("right_code = ?");
+      params.push(payload.coverage_code);
+    }
   }
 
   if (sets.length) {
@@ -170,7 +225,25 @@ export async function upsertCaseInfo(caseId, payload = {}) {
       age_text AS age,
       ward_name AS ward,
       right_name AS coverage,
-      right_code AS coverageCode
+      right_code AS coverageCode,
+      COALESCE(
+      (
+        SELECT m.coverage_group
+        FROM coverage_prefix_mapping m
+        WHERE UPPER(TRIM(IFNULL(cases.right_code, ''))) LIKE CONCAT(UPPER(TRIM(m.right_prefix)), '%')
+        ORDER BY CHAR_LENGTH(m.right_prefix) DESC
+        LIMIT 1
+      ),
+      CASE
+        WHEN cases.right_name LIKE '%ประกันสังคม%' THEN 'SSS'
+        WHEN cases.right_name LIKE '%ต่างด้าว%' THEN 'FOREIGN'
+        WHEN cases.right_name LIKE '%บุคคลที่มีปัญหา%' THEN 'PROBLEM'
+        WHEN cases.right_name LIKE '%ข้าราชการ%' OR cases.right_name LIKE '%เบิกกรมบัญชีกลาง%' THEN 'GOV'
+        WHEN cases.right_name LIKE '%ท้องถิ่น%' THEN 'LOCAL'
+        WHEN cases.right_name LIKE '%บัตรสุขภาพถ้วนหน้า%' OR cases.right_name LIKE '%30 บาท%' THEN 'UC'
+        ELSE NULL
+      END
+      ) AS coverage_group
     FROM cases
     WHERE id = ?
     LIMIT 1

@@ -7,6 +7,6 @@ const r = Router();
 r.get("/cases/:caseId/snapshots", c.listCaseSnapshots);
 
 
-r.get("/snapshots/:snapshotId", c.readSnapshot);
+r.get("/snapshots/:id", c.readSnapshot);
 
 export default r;
