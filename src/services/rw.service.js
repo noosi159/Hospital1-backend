@@ -214,7 +214,7 @@ export async function getCurrentPreAdjRw(caseId) {
 export async function getLatestAdjrwState(caseId) {
   const [historyRows] = await pool.query(
     `
-    SELECT pre_adjrw, post_adjrw, updated_at
+    SELECT pre_adjrw, post_adjrw, created_at AS updated_at
     FROM case_adjrw_history
     WHERE case_id = ?
     ORDER BY id DESC

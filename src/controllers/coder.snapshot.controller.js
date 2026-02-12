@@ -108,7 +108,38 @@ export async function loadForm(req, res) {
     const caseId = Number(req.params.caseId);
     const snap = await getLatestSnapshot({ caseId, role: "AUDITOR", action: "SUBMIT_TO_CODER" });
     if (!snap) return res.status(404).json({ message: "No auditor export found" });
-    res.json(snap);
+
+    const payload = snap?.payload && typeof snap.payload === "object" ? snap.payload : {};
+    const coder = payload?.coder && typeof payload.coder === "object" ? payload.coder : {};
+
+    const incomingRw = toNumberOrNull(coder?.rw);
+    const incomingAdjrw =
+      extractAdjrwValue(coder?.adjrw) ??
+      toNumberOrNull(coder?.postAdjRw) ??
+      toNumberOrNull(coder?.postAdjrw);
+
+    if (incomingRw !== null && incomingAdjrw !== null) {
+      return res.json(snap);
+    }
+
+    const adj = await getLatestAdjrwState(caseId);
+    const safeRw = toNumberOrNull(adj?.rw) ?? 0;
+    const safePreAdjrw = toNumberOrNull(adj?.preAdjrw) ?? 0;
+    const safePostAdjrw = toNumberOrNull(adj?.postAdjrw) ?? safePreAdjrw;
+
+    return res.json({
+      ...snap,
+      payload: {
+        ...payload,
+        coder: {
+          ...coder,
+          rw: incomingRw ?? safeRw,
+          adjrw: incomingAdjrw ?? safePostAdjrw,
+          preAdjRw: coder?.preAdjRw ?? safePreAdjrw,
+          postAdjRw: coder?.postAdjRw ?? safePostAdjrw,
+        },
+      },
+    });
   } catch (e) {
     res.status(500).json({ message: e.message });
   }
